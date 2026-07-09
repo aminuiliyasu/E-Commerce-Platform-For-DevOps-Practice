@@ -1,0 +1,20 @@
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /app
+COPY backend/pom.xml backend/pom.xml
+COPY backend/ecommerce-common backend/ecommerce-common
+COPY backend/ecommerce-security backend/ecommerce-security
+COPY backend/ecommerce-user backend/ecommerce-user
+COPY backend/ecommerce-catalog backend/ecommerce-catalog
+COPY backend/ecommerce-cart backend/ecommerce-cart
+COPY backend/ecommerce-order backend/ecommerce-order
+COPY backend/ecommerce-payment backend/ecommerce-payment
+COPY backend/ecommerce-notification backend/ecommerce-notification
+COPY backend/ecommerce-admin backend/ecommerce-admin
+COPY backend/ecommerce-api backend/ecommerce-api
+RUN mvn -f backend/pom.xml package -DskipTests -q
+
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+COPY --from=build /app/backend/ecommerce-api/target/ecommerce-api-1.0.0-SNAPSHOT.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]

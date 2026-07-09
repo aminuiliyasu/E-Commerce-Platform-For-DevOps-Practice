@@ -1,0 +1,20 @@
+# Compiled output
+backend/**/target/
+frontend/**/dist/
+frontend/**/node_modules/
+
+# Environment
+.env
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
