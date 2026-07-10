@@ -112,7 +112,7 @@ The application is intentionally built as a **modular monolith**. Each business 
 | Message Broker | Amazon MQ (managed RabbitMQ) |
 | Document Database | MongoDB Atlas (VPC peering) |
 | Object Storage | Amazon S3 |
-| Secrets | AWS Secrets Manager |
+| Secrets | AWS Secrets Manager + External Secrets Operator |
 | Infrastructure as Code | Terraform |
 | CI/CD | Jenkins (GitFlow branching strategy) |
 | Monitoring | Prometheus, Grafana, Amazon CloudWatch |
@@ -141,8 +141,12 @@ ecommerce-platform/
 │   └── admin-web/                 # Administrative dashboard
 ├── infrastructure/
 │   └── terraform/                 # IaC modules and environment configs
+│       ├── backend.tf             # S3 state + DynamoDB lock
+│       ├── modules/               # Reusable Terraform modules
+│       └── environments/          # dev, staging, prod configs
 ├── docker/                        # Dockerfiles and compose configuration
-├── k8s/                           # Kubernetes manifests or Helm charts
+├── k8s/
+│   └── helm/                      # Helm charts for EKS deployments
 ├── jenkins/                       # Jenkins pipeline definitions
 └── docs/                          # Supplementary documentation
 ```
@@ -488,73 +492,154 @@ Development follows a phased approach. Infrastructure work begins after the appl
 
 ### Phase 5 — Infrastructure (AWS)
 
-- Terraform modules for VPC, EKS, RDS, ElastiCache, ALB, CloudFront
+- Terraform modules (VPC, security groups, ECR, RDS, ElastiCache, Amazon MQ, EKS, ALB, S3, IAM, ACM, Route 53, CloudFront, WAF)
+- MongoDB Atlas cluster with VPC peering
+- Helm charts for API and frontend deployments on EKS
+- External Secrets Operator with AWS Secrets Manager
 - Jenkins CI/CD pipeline with GitFlow
-- Kubernetes deployment with Helm charts
 - Monitoring with Prometheus, Grafana, and CloudWatch
-- Domain configuration for `ecommerce.aminuiliyasu.com`
+- Domain and TLS configuration for `ecommerce.aminuiliyasu.com`
 
 ---
 
 ## AWS Infrastructure
 
-Infrastructure is provisioned with Terraform using a modular layout with separate environment configurations.
+Infrastructure is provisioned with Terraform using a modular layout and separate environment configurations (`dev`, `staging`, `prod`). Start with the `dev` environment and promote the same modules to staging and production.
+
+### Local to AWS Service Mapping
+
+| Local (Docker Compose) | AWS Production |
+|------------------------|----------------|
+| `ecommerce-api` | EKS Deployment |
+| `customer-web` | EKS Deployment (or S3 + CloudFront) |
+| `admin-web` | EKS Deployment (or S3 + CloudFront) |
+| `mysql` | Amazon RDS MySQL (Multi-AZ in prod) |
+| `mongo` | MongoDB Atlas (VPC peering) |
+| `redis` | Amazon ElastiCache for Redis |
+| `rabbitmq` | Amazon MQ (RabbitMQ engine) |
 
 ### Terraform Layout
 
 ```
 infrastructure/terraform/
+├── backend.tf              # S3 state + DynamoDB lock
 ├── modules/
 │   ├── vpc/
-│   ├── eks/
+│   ├── security-groups/
+│   ├── ecr/
 │   ├── rds/
 │   ├── elasticache/
+│   ├── amazon-mq/
+│   ├── eks/
 │   ├── alb/
-│   ├── cloudfront/
-│   ├── waf/
 │   ├── s3/
-│   ├── ecr/
 │   ├── iam/
-│   └── route53/
-├── environments/
-│   ├── dev/
-│   ├── staging/
-│   └── prod/
-└── backend.tf
+│   ├── route53/
+│   ├── acm/
+│   ├── cloudfront/
+│   └── waf/
+└── environments/
+    ├── dev/
+    ├── staging/
+    └── prod/
 ```
 
-Terraform state is stored in S3 with DynamoDB for state locking.
+Terraform state is stored in an S3 bucket with DynamoDB for state locking. Each environment directory contains its own `main.tf`, `variables.tf`, `terraform.tfvars`, and `outputs.tf` that compose modules from `modules/`.
+
+### Module Provisioning Order
+
+Build and apply modules in dependency order:
+
+1. **vpc** — VPC, public/private subnets across 2 AZs, Internet Gateway, NAT Gateway
+2. **security-groups** — Least-privilege groups for ALB, EKS nodes, RDS, ElastiCache, Amazon MQ
+3. **ecr** — Container repositories for `ecommerce-api`, `customer-web`, `admin-web`
+4. **rds** — MySQL 8 with automated backups
+5. **elasticache** — Redis cluster for cart and session cache
+6. **amazon-mq** — Managed RabbitMQ broker for async events
+7. **s3** — Asset storage and Terraform state (bootstrap)
+8. **iam** — EKS cluster roles, node roles, IRSA for pod-level AWS access
+9. **eks** — Cluster and managed node group
+10. **alb** — Application Load Balancer via AWS Load Balancer Controller
+11. **acm** — TLS certificates (`us-east-1` for CloudFront, app region for ALB)
+12. **route53** — DNS records for `ecommerce.aminuiliyasu.com`
+13. **cloudfront** + **waf** — CDN, edge caching, and web application firewall
+
+MongoDB Atlas is provisioned outside Terraform with VPC peering into the AWS VPC.
 
 ### Network Design
 
-- VPC spanning two Availability Zones
-- Public subnets for ALB and NAT Gateway
-- Private subnets for EKS worker nodes, RDS, and ElastiCache
-- Security groups configured with least-privilege access
+| Subnet type | Resources |
+|-------------|-----------|
+| Public | ALB, NAT Gateway |
+| Private | EKS worker nodes, RDS, ElastiCache, Amazon MQ |
 
-### EKS Workloads
+- VPC spans a minimum of two Availability Zones
+- No public IPs on database or cache instances
+- Security groups managed in a dedicated module with explicit ingress/egress rules
+- VPC Flow Logs enabled for network audit
+
+### Secrets and Configuration
+
+Application secrets are stored in AWS Secrets Manager and injected into EKS pods via the External Secrets Operator:
+
+| Variable | Storage |
+|----------|---------|
+| `DB_HOST`, `DB_USER`, `DB_PASSWORD` | Secrets Manager |
+| `MONGO_URI` | Secrets Manager |
+| `JWT_SECRET` | Secrets Manager |
+| `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | Secrets Manager |
+| `REDIS_HOST`, `RABBITMQ_HOST` | ConfigMap |
+
+Secrets must never be committed to Git or stored in Terraform variable files.
+
+### Kubernetes Layout
+
+Helm charts live under `k8s/helm/`:
+
+```
+k8s/helm/
+├── ecommerce-api/
+├── customer-web/
+└── admin-web/
+```
 
 | Deployment | Replicas | Notes |
 |------------|----------|-------|
-| `ecommerce-api` | 2–10 (HPA) | CPU target 70% |
-| `customer-web` | 2 | Nginx serving React build |
-| `admin-web` | 2 | Nginx serving React build |
-| `prometheus` | 1 | Metrics collection |
+| `ecommerce-api` | 2–10 (HPA) | CPU target 70%, liveness/readiness via Actuator |
+| `customer-web` | 2 | Nginx serving React production build |
+| `admin-web` | 2 | Nginx serving React production build |
+| `prometheus` | 1 | In-cluster metrics collection |
 | `grafana` | 1 | Dashboards and alerting |
 
-Kubernetes namespaces: `ecommerce-prod`, `ecommerce-staging`, `monitoring`.
+Kubernetes namespaces: `ecommerce-dev`, `ecommerce-staging`, `ecommerce-prod`, `monitoring`.
 
-Ingress is managed through the AWS Load Balancer Controller, routing traffic from ALB to the appropriate services.
+Ingress is managed through the AWS Load Balancer Controller:
+
+| Host / Path | Service |
+|-------------|---------|
+| `ecommerce.aminuiliyasu.com/` | customer-web |
+| `ecommerce.aminuiliyasu.com/api/*` | ecommerce-api |
+| `admin.ecommerce.aminuiliyasu.com/` | admin-web |
 
 ### Request Flow
 
 1. User requests `https://ecommerce.aminuiliyasu.com`
-2. Route 53 resolves to CloudFront distribution
-3. CloudFront serves static frontend assets from cache or forwards API requests to ALB
-4. AWS WAF inspects requests at the edge
-5. ALB routes traffic to EKS ingress
-6. Ingress forwards to the appropriate service (API, customer-web, or admin-web)
-7. API pods connect to RDS, ElastiCache, Amazon MQ, and MongoDB Atlas via private networking
+2. Route 53 resolves to the CloudFront distribution
+3. AWS WAF inspects the request at the edge
+4. CloudFront serves cached static assets or forwards dynamic requests to the ALB
+5. ALB routes traffic to the EKS ingress controller
+6. Ingress forwards to the appropriate service (customer-web, admin-web, or ecommerce-api)
+7. API pods connect to RDS, ElastiCache, Amazon MQ, and MongoDB Atlas over private networking
+
+### Environment Strategy
+
+| Environment | Purpose | Sizing |
+|-------------|---------|--------|
+| dev | Development and learning | Single-AZ, smaller instances, 1 EKS node |
+| staging | Pre-production validation | Reduced prod footprint |
+| prod | Live traffic at `ecommerce.aminuiliyasu.com` | Multi-AZ, HPA, WAF enabled |
+
+Estimated monthly cost: dev $80–150, staging $150–250, prod $300–800.
 
 ---
 
@@ -656,43 +741,61 @@ DR procedures will be documented in `docs/disaster-recovery.md` as the infrastru
 | Record | Type | Target |
 |--------|------|--------|
 | `ecommerce.aminuiliyasu.com` | A (Alias) | CloudFront distribution |
-| `api.ecommerce.aminuiliyasu.com` | A (Alias) | Application Load Balancer (optional) |
+| `admin.ecommerce.aminuiliyasu.com` | A (Alias) | CloudFront distribution |
 
 ### TLS Certificates
 
-- ACM certificate for `ecommerce.aminuiliyasu.com` and `*.aminuiliyasu.com`
-- Certificate must be provisioned in `us-east-1` for CloudFront compatibility
-- ALB uses the same certificate in the application region
+- ACM certificate for `ecommerce.aminuiliyasu.com`, `admin.ecommerce.aminuiliyasu.com`, and `*.aminuiliyasu.com`
+- Certificate in `us-east-1` for CloudFront
+- Certificate in the application region (e.g. `eu-central-1`) for the ALB
+
+### CloudFront Cache Behavior
+
+| Path pattern | Caching |
+|--------------|---------|
+| `/api/*` | No cache — forward all headers and cookies |
+| `/assets/*`, `*.js`, `*.css` | Cache 1 day or more |
+| Default (HTML/SPA) | Short TTL or no cache for `index.html` |
 
 ### Deployment Checklist
 
-1. Verify domain ownership in Route 53 (or configure NS delegation from registrar)
-2. Request and validate ACM certificate
-3. Provision infrastructure with Terraform (VPC through EKS)
-4. Build and push container images to ECR
-5. Deploy workloads to EKS via Helm
-6. Create CloudFront distribution with WAF web ACL attached
-7. Point `ecommerce.aminuiliyasu.com` A record to CloudFront
-8. Run smoke tests: HTTPS access, API health, authentication, test order placement
-9. Enable CloudWatch alarms, backup policies, and WAF managed rules
+1. Bootstrap Terraform state (S3 bucket + DynamoDB lock table)
+2. Verify domain ownership in Route 53 (or configure NS delegation from registrar)
+3. Apply Terraform modules in order: VPC → security groups → ECR → RDS → ElastiCache → Amazon MQ → IAM → EKS → ALB
+4. Provision MongoDB Atlas and configure VPC peering
+5. Store secrets in AWS Secrets Manager and configure External Secrets Operator
+6. Build and push container images to ECR
+7. Deploy workloads to EKS via Helm
+8. Request and validate ACM certificates
+9. Apply CloudFront, WAF, and Route 53 modules
+10. Point `ecommerce.aminuiliyasu.com` and `admin.ecommerce.aminuiliyasu.com` to CloudFront
+11. Run smoke tests: HTTPS access, API health, authentication, test order placement
+12. Enable CloudWatch alarms, backup policies, and WAF managed rules
 
 ---
 
 ## Cost Considerations
 
-Estimated monthly cost for the production environment at moderate traffic: **$300–$800**, depending on instance sizes and Multi-AZ configuration.
+Estimated monthly cost by environment:
+
+| Environment | Estimated cost |
+|-------------|----------------|
+| dev | $80–150 |
+| staging | $150–250 |
+| prod (10K–100K daily users) | $300–800 |
 
 | Optimization | Impact |
 |-------------|--------|
 | Right-size EKS node groups and use HPA | Avoid idle compute |
 | Use Amazon MQ instead of self-hosted RabbitMQ on EKS | Reduced operational overhead |
-| MongoDB Atlas shared tier for staging | Lower non-production costs |
+| MongoDB Atlas shared tier for dev/staging | Lower non-production costs |
 | CloudFront caching for static assets | Reduced ALB and origin load |
 | RDS Reserved Instances after sizing stabilizes | 30–40% savings on database |
 | Single-AZ and smaller instances for dev/staging | Significant non-production savings |
 | S3 Intelligent-Tiering for product images | Storage cost optimization |
+| Shut down dev/staging outside working hours | Lower compute costs during learning |
 
-Start with a minimal production footprint (2 API pods, 2 frontend replicas, `db.t3.medium` RDS) and scale based on observed metrics.
+Start with a minimal production footprint (2 API pods, 2 frontend replicas, `db.t3.medium` RDS Multi-AZ) and scale based on observed CloudWatch and Prometheus metrics.
 
 ---
 
@@ -700,18 +803,19 @@ Start with a minimal production footprint (2 API pods, 2 frontend replicas, `db.
 
 ### Near Term
 
-- [ ] Backend multi-module project scaffold
-- [ ] Customer and admin React application shells
-- [ ] Docker Compose local development environment
-- [ ] User authentication and product catalog
-- [ ] Cart, checkout, and order management
+- [x] Backend multi-module project scaffold
+- [x] Customer and admin React application shells
+- [x] Docker Compose local development environment
+- [x] User authentication and product catalog
+- [x] Cart, checkout, and order management
 
 ### Medium Term
 
-- [ ] Docker images and Jenkins pipeline
-- [ ] Terraform modules for AWS infrastructure
-- [ ] EKS deployment with Helm charts
-- [ ] CloudFront, WAF, and Route 53 configuration
+- [ ] Terraform modules (VPC, security-groups, ECR, RDS, ElastiCache, Amazon MQ, EKS, ALB, S3, IAM, ACM, Route 53, CloudFront, WAF)
+- [ ] MongoDB Atlas with VPC peering
+- [ ] Helm charts and EKS deployment
+- [ ] External Secrets Operator with AWS Secrets Manager
+- [ ] Jenkins pipeline with GitFlow
 - [ ] Prometheus and Grafana monitoring stack
 
 ### Long Term
