@@ -3,13 +3,17 @@ backend/**/target/
 frontend/**/dist/
 frontend/**/node_modules/
 
-# Environment
+# Environment and secrets
 .env
+.env.*
+!.env.example
 
-# IDE
+# IDE and local tooling
 .idea/
 *.iml
 .vscode/
+.cursor/
+.githooks/
 *.swp
 
 # OS
@@ -25,6 +29,8 @@ Thumbs.db
 *.tfstate
 *.tfstate.*
 *.tfplan
+**/terraform.tfvars
+!**/terraform.tfvars.example
 crash.log
 override.tf
 override.tf.json

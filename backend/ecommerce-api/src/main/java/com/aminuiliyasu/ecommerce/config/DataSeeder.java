@@ -13,6 +13,7 @@ import com.aminuiliyasu.ecommerce.user.repository.RoleRepository;
 import com.aminuiliyasu.ecommerce.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -34,6 +35,18 @@ public class DataSeeder implements CommandLineRunner {
     private final CouponRepository couponRepository;
     private final PasswordEncoder passwordEncoder;
 
+    @Value("${app.seed.admin-email:}")
+    private String seedAdminEmail;
+
+    @Value("${app.seed.admin-password:}")
+    private String seedAdminPassword;
+
+    @Value("${app.seed.customer-email:}")
+    private String seedCustomerEmail;
+
+    @Value("${app.seed.customer-password:}")
+    private String seedCustomerPassword;
+
     @Override
     public void run(String... args) {
         seedUsers();
@@ -48,24 +61,28 @@ public class DataSeeder implements CommandLineRunner {
         Role customerRole = roleRepository.findByName("CUSTOMER").orElseThrow();
         Role adminRole = roleRepository.findByName("ADMIN").orElseThrow();
 
-        userRepository.save(User.builder()
-                .email("admin@aminuiliyasu.com")
-                .password(passwordEncoder.encode("Admin@12345"))
-                .firstName("Aminu")
-                .lastName("Iliyasu")
-                .roles(Set.of(adminRole))
-                .enabled(true)
-                .build());
+        if (!seedAdminEmail.isBlank() && !seedAdminPassword.isBlank()) {
+            userRepository.save(User.builder()
+                    .email(seedAdminEmail)
+                    .password(passwordEncoder.encode(seedAdminPassword))
+                    .firstName("Aminu")
+                    .lastName("Iliyasu")
+                    .roles(Set.of(adminRole))
+                    .enabled(true)
+                    .build());
+        }
 
-        userRepository.save(User.builder()
-                .email("customer@example.com")
-                .password(passwordEncoder.encode("Customer@123"))
-                .firstName("John")
-                .lastName("Doe")
-                .phone("+1234567890")
-                .roles(Set.of(customerRole))
-                .enabled(true)
-                .build());
+        if (!seedCustomerEmail.isBlank() && !seedCustomerPassword.isBlank()) {
+            userRepository.save(User.builder()
+                    .email(seedCustomerEmail)
+                    .password(passwordEncoder.encode(seedCustomerPassword))
+                    .firstName("John")
+                    .lastName("Doe")
+                    .phone("+1234567890")
+                    .roles(Set.of(customerRole))
+                    .enabled(true)
+                    .build());
+        }
     }
 
     private void seedCategoriesAndProducts() {

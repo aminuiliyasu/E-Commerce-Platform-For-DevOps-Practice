@@ -40,7 +40,6 @@ export default function LoginPage() {
         <p className="mt-4 text-center text-sm text-gray-500">
           Don't have an account? <Link to="/register" className="text-brand-600 hover:text-brand-700">Sign up</Link>
         </p>
-        <p className="mt-2 text-center text-xs text-gray-400">Demo: customer@example.com / Customer@123</p>
       </div>
     </div>
   );

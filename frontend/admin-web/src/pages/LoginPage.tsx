@@ -31,7 +31,6 @@ export default function LoginPage() {
           {error && <p className="text-sm text-red-500">{error}</p>}
           <button type="submit" className="btn-primary w-full">Sign In</button>
         </form>
-        <p className="mt-4 text-center text-xs text-gray-400">Demo: admin@aminuiliyasu.com / Admin@12345</p>
       </div>
     </div>
   );
