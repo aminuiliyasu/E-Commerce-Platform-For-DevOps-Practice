@@ -23,6 +23,13 @@ Thumbs.db
 # Logs
 *.log
 
+# Cloud Atlas
+infrastructure/cloud-atlas/**/__pycache__/
+infrastructure/cloud-atlas/.venv/
+infrastructure/cloud-atlas/data/
+infrastructure/cloud-atlas/web/node_modules/
+infrastructure/cloud-atlas/web/dist/
+
 # Terraform
 **/.terraform/
 **/.terraform.lock.hcl
