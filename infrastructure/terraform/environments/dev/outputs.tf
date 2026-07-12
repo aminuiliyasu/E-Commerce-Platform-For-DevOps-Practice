@@ -28,3 +28,7 @@ output "ecr_repository_urls" {
 output "db_endpoint" {
   value = module.rds.db_endpoint
 }
+
+output "redis_endpoint" {
+  value = module.elasticache.redis_endpoint
+}

@@ -70,3 +70,12 @@ module "rds" {
   security_group_id  = module.security_groups.rds_security_group_id
   multi_az           = var.rds_multi_az
 }
+
+module "elasticache" {
+  source = "../../modules/elasticache"
+
+  project_name       = var.project_name
+  environment        = var.environment
+  private_subnet_ids = module.vpc.private_subnet_ids
+  security_group_id  = module.security_groups.redis_security_group_id
+}
