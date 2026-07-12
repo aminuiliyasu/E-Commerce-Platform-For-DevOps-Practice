@@ -37,6 +37,26 @@ provider "aws" {
   }
 }
 
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      Environment = var.environment
+      ManagedBy   = "terraform"
+    }
+  }
+}
+
+data "aws_route53_zone" "main" {
+  count = var.enable_edge ? 1 : 0
+
+  name         = var.hosted_zone_name
+  private_zone = false
+}
+
 module "vpc" {
   source = "../../modules/vpc"
 

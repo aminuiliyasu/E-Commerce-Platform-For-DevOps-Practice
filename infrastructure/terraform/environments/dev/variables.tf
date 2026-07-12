@@ -46,3 +46,30 @@ variable "eks_max_size" {
   type    = number
   default = 3
 }
+
+variable "enable_edge" {
+  type        = bool
+  default     = false
+  description = "Enable ACM, CloudFront, WAF and Route53 edge stack"
+}
+
+variable "hosted_zone_name" {
+  type    = string
+  default = "aminuiliyasu.com."
+}
+
+variable "domain_name" {
+  type    = string
+  default = "ecommerce.aminuiliyasu.com"
+}
+
+variable "admin_domain_name" {
+  type    = string
+  default = "admin.ecommerce.aminuiliyasu.com"
+}
+
+variable "origin_domain_name" {
+  type        = string
+  default     = ""
+  description = "ALB hostname for CloudFront origin (set after ingress is live)"
+}
