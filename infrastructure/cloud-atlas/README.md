@@ -44,6 +44,9 @@ Then open **two terminals** from `infrastructure/cloud-atlas`:
 # Terminal 1 — API on http://localhost:8090
 ./scripts/start-api.sh
 
+# if you see "Address already in use":
+./scripts/stop-api.sh && ./scripts/start-api.sh
+
 # Terminal 2 — UI on http://localhost:5190
 ./scripts/start-web.sh
 ```
