@@ -29,6 +29,7 @@ infrastructure/cloud-atlas/.venv/
 infrastructure/cloud-atlas/data/
 infrastructure/cloud-atlas/web/node_modules/
 infrastructure/cloud-atlas/web/dist/
+infrastructure/cloud-atlas/.env
 
 # Terraform
 **/.terraform/

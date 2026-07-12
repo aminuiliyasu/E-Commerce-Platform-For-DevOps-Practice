@@ -31,15 +31,58 @@ Terraform State + AWS APIs
 
 ## Quick start
 
+Ubuntu/Debian blocks system-wide `pip install`. Use the setup script — it creates a venv for you.
+
 ```bash
-# uses your local ~/.aws/credentials or aws sso login — keys never stored in the app
 cd infrastructure/cloud-atlas
-cp .env.example .env
-pip install -r requirements.txt
-python -m scanner.run          # discover aws resources
-python -m api.main             # start api on :8090
-cd web && npm install && npm run dev   # ui on :5190
+./scripts/setup.sh        # once: venv + pip + npm
 ```
+
+Then open **two terminals** from `infrastructure/cloud-atlas`:
+
+```bash
+# Terminal 1 — API on http://localhost:8090
+./scripts/start-api.sh
+
+# Terminal 2 — UI on http://localhost:5190
+./scripts/start-web.sh
+```
+
+Open http://localhost:5190 in your browser.
+
+### Configure AWS first
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env`:
+
+```env
+AWS_PROFILE=default
+AWS_REGION=eu-central-1
+TF_STATE_BUCKET=your-terraform-state-bucket
+TF_STATE_KEY=ecommerce/dev/terraform.tfstate
+```
+
+Verify credentials:
+
+```bash
+aws sts get-caller-identity
+```
+
+### Manual commands (if you prefer)
+
+```bash
+cd infrastructure/cloud-atlas
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+export PYTHONPATH=.
+python -m api.main
+```
+
+**Important:** run API commands from `infrastructure/cloud-atlas`, not from `web/`.
 
 ## Security
 
