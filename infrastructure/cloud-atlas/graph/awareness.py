@@ -156,39 +156,88 @@ class AwarenessEngine:
             q = alert.get("question", "General")
             by_question.setdefault(q, []).append(alert)
 
+        by_type: dict[str, list] = {}
+        for node in snapshot.nodes:
+            by_type.setdefault(node.type.value, []).append(self._resource_row(node))
+
+        public_nodes = [self._resource_row(n) for n in snapshot.nodes if n.public]
+        unmanaged_nodes = [
+            self._resource_row(n) for n in snapshot.nodes
+            if n.metadata.get("terraform_status") == "unmanaged"
+            and n.type not in (NodeType.ACCOUNT, NodeType.REGION)
+        ]
+        managed_nodes = [
+            self._resource_row(n) for n in snapshot.nodes
+            if n.metadata.get("terraform_status") == "managed"
+        ]
+        delete_alerts = by_question.get("What could break if I delete this?", [])
+
         cards = [
             {
+                "id": "own",
                 "question": "What do I own?",
-                "answer": f"{len(snapshot.nodes)} resources across {len({n.type for n in snapshot.nodes})} types",
+                "answer": f"{len(snapshot.nodes)} resources across {len(by_type)} types",
                 "count": len(snapshot.nodes),
+                "resources": [self._resource_row(n) for n in snapshot.nodes if n.type not in (NodeType.ACCOUNT, NodeType.REGION)],
+                "by_type": by_type,
             },
             {
+                "id": "public",
                 "question": "What is public?",
-                "answer": f"{sum(1 for n in snapshot.nodes if n.public)} publicly exposed resources",
-                "count": sum(1 for n in snapshot.nodes if n.public),
+                "answer": f"{len(public_nodes)} publicly exposed resources",
+                "count": len(public_nodes),
+                "resources": public_nodes,
                 "alerts": by_question.get("What is public?", []),
             },
             {
+                "id": "terraform",
                 "question": "Which resources aren't managed by Terraform?",
                 "answer": f"{tf_report.get('unmanaged_count', 0)} unmanaged, {tf_report.get('ghost_count', 0)} ghosts in state",
                 "count": tf_report.get("unmanaged_count", 0),
+                "resources": unmanaged_nodes,
+                "managed_resources": managed_nodes,
+                "ghosts": tf_report.get("ghosts", []),
                 "alerts": by_question.get("Which resources aren't managed by Terraform?", []),
             },
             {
+                "id": "delete",
                 "question": "What could break if I delete this?",
-                "answer": f"{len(by_question.get('What could break if I delete this?', []))} high-impact resources",
-                "count": len(by_question.get("What could break if I delete this?", [])),
-                "alerts": by_question.get("What could break if I delete this?", []),
+                "answer": f"{len(delete_alerts)} high-impact resources",
+                "count": len(delete_alerts),
+                "resources": [
+                    self._resource_row(n) for n in snapshot.nodes
+                    if n.id in {a.get("resource_id") for a in delete_alerts if a.get("resource_id")}
+                ],
+                "alerts": delete_alerts,
             },
             {
+                "id": "traffic",
                 "question": "How does traffic flow?",
-                "answer": "See traffic path in network view",
+                "answer": "Internet-facing path through your load balancers and clusters",
+                "resources": [
+                    self._resource_row(n) for n in snapshot.nodes
+                    if n.type in (NodeType.CLOUDFRONT, NodeType.ALB, NodeType.EKS_CLUSTER, NodeType.INTERNET_GATEWAY)
+                ],
                 "alerts": by_question.get("How does traffic flow?", []),
             },
             {
+                "id": "modules",
                 "question": "Which Terraform module created this?",
                 "answer": f"{len(tf_report.get('modules', {}))} modules detected in state",
                 "modules": tf_report.get("modules", {}),
+                "resources": managed_nodes,
             },
         ]
         return cards
+
+    def _resource_row(self, node: ResourceNode) -> dict:
+        return {
+            "id": node.id,
+            "type": node.type.value,
+            "name": node.name,
+            "region": node.region,
+            "public": node.public,
+            "arn": node.arn,
+            "metadata": node.metadata,
+            "tags": node.tags,
+        }
