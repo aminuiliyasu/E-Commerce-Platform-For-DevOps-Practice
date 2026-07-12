@@ -7,6 +7,7 @@ import ReactFlow, {
   Edge,
   useNodesState,
   useEdgesState,
+  NodeMouseHandler,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import {
@@ -17,18 +18,23 @@ import {
   disconnectAws,
   GraphData,
   Overview,
+  ResourceNode,
+  QuestionCard,
+  Alert,
 } from './api';
 import ConnectPage from './ConnectPage';
+import DetailPanel from './DetailPanel';
+import { DetailView } from './inventory';
 
 type Layer = 'network' | 'security' | 'terraform';
 
 const TYPE_COLORS: Record<string, string> = {
-  vpc: '#3b82f6',
+  vpc: '#6366f1',
   subnet: '#64748b',
-  internet_gateway: '#22c55e',
+  internet_gateway: '#22d3ee',
   nat_gateway: '#f59e0b',
-  security_group: '#ef4444',
-  rds: '#a855f7',
+  security_group: '#f472b6',
+  rds: '#a78bfa',
   elasticache: '#ec4899',
   eks_cluster: '#818cf8',
   s3: '#06b6d4',
@@ -36,61 +42,79 @@ const TYPE_COLORS: Record<string, string> = {
   cloudfront: '#f97316',
 };
 
+const SKIP_TYPES = new Set(['account', 'region']);
+
 function buildFlow(data: GraphData, layer: Layer): { nodes: Node[]; edges: Edge[] } {
   const vpcs = data.nodes.filter((n) => n.type === 'vpc');
   const nodes: Node[] = [];
   const edges: Edge[] = [];
+  const placed = new Set<string>();
+
+  const addNode = (resource: ResourceNode, position: { x: number; y: number }, className: string, color?: string) => {
+    if (placed.has(resource.id)) return;
+    placed.add(resource.id);
+    nodes.push({
+      id: resource.id,
+      position,
+      data: { label: `${resource.type.replace(/_/g, ' ')}: ${resource.name}` },
+      className,
+      style: { minWidth: 130, padding: 8, borderColor: color },
+    });
+  };
 
   vpcs.forEach((vpc, vi) => {
-    const vpcX = vi * 500;
-    nodes.push({
-      id: vpc.id,
-      position: { x: vpcX, y: 40 },
-      data: { label: `VPC: ${vpc.name}` },
-      className: 'node-vpc',
-      style: { minWidth: 180, padding: 10 },
-    });
+    const vpcX = vi * 520;
+    addNode(vpc, { x: vpcX, y: 40 }, 'node-vpc', TYPE_COLORS.vpc);
 
     const subnets = data.nodes.filter(
-      (n) => n.type === 'subnet' && data.edges.some((e) => e.source === vpc.id && e.target === n.id)
+      (n) => n.type === 'subnet' && data.edges.some((e) => e.source === vpc.id && e.target === n.id),
     );
     subnets.forEach((subnet, si) => {
       const isPublic = subnet.metadata?.public;
-      nodes.push({
-        id: subnet.id,
-        position: { x: vpcX + (si % 2) * 200, y: 160 + Math.floor(si / 2) * 100 },
-        data: { label: `${isPublic ? 'Public' : 'Private'}: ${subnet.name}` },
-        className: isPublic ? 'node-subnet-public' : 'node-subnet-private',
-        style: { minWidth: 150, padding: 8 },
-      });
+      addNode(
+        subnet,
+        { x: vpcX + (si % 2) * 210, y: 160 + Math.floor(si / 2) * 100 },
+        isPublic ? 'node-subnet-public' : 'node-subnet-private',
+      );
       edges.push({ id: `${vpc.id}-${subnet.id}`, source: vpc.id, target: subnet.id });
     });
 
-    const services = data.nodes.filter((n) =>
-      ['rds', 'elasticache', 'mq', 'eks_cluster', 'alb', 'nat_gateway', 'internet_gateway'].includes(n.type)
-      && data.edges.some((e) => e.source === vpc.id && e.target === n.id)
+    const services = data.nodes.filter(
+      (n) =>
+        ['rds', 'elasticache', 'mq', 'eks_cluster', 'alb', 'nat_gateway', 'internet_gateway'].includes(n.type) &&
+        data.edges.some((e) => e.source === vpc.id && e.target === n.id),
     );
     services.forEach((svc, si) => {
-      const color = layer === 'security' && svc.public ? '#ef4444' : TYPE_COLORS[svc.type] || '#64748b';
-      nodes.push({
-        id: svc.id,
-        position: { x: vpcX + 50 + si * 120, y: 380 },
-        data: { label: `${svc.type}: ${svc.name}` },
-        className: svc.public && layer === 'security' ? 'node-risk' : 'node-service',
-        style: { minWidth: 120, padding: 8, borderColor: color },
-      });
+      const color = layer === 'security' && svc.public ? '#f472b6' : TYPE_COLORS[svc.type] || '#64748b';
+      addNode(svc, { x: vpcX + 40 + si * 125, y: 380 }, svc.public && layer === 'security' ? 'node-risk' : 'node-service', color);
       edges.push({ id: `${vpc.id}-${svc.id}`, source: vpc.id, target: svc.id });
     });
+
+    data.nodes
+      .filter((n) => n.type === 'security_group' && n.metadata?.vpc_id === vpc.id)
+      .forEach((sg, si) => {
+        addNode(sg, { x: vpcX + 20 + si * 110, y: 520 }, sg.public && layer === 'security' ? 'node-risk' : 'node-service', TYPE_COLORS.security_group);
+        edges.push({ id: `${vpc.id}-${sg.id}`, source: vpc.id, target: sg.id });
+      });
   });
 
   data.nodes.filter((n) => ['cloudfront', 'route53_zone', 's3', 'ecr'].includes(n.type)).forEach((g, gi) => {
-    nodes.push({
-      id: g.id,
-      position: { x: 50 + gi * 160, y: 520 },
-      data: { label: `${g.type}: ${g.name}` },
-      className: g.public && layer === 'security' ? 'node-risk' : 'node-service',
-      style: { minWidth: 130, padding: 8 },
-    });
+    addNode(
+      g,
+      { x: 50 + gi * 170, y: 640 },
+      g.public && layer === 'security' ? 'node-risk' : 'node-service',
+      TYPE_COLORS[g.type],
+    );
+  });
+
+  const orphans = data.nodes.filter((n) => !placed.has(n.id) && !SKIP_TYPES.has(n.type));
+  orphans.forEach((n, i) => {
+    addNode(
+      n,
+      { x: 60 + (i % 4) * 180, y: 780 + Math.floor(i / 4) * 90 },
+      n.public && layer === 'security' ? 'node-risk' : 'node-service',
+      TYPE_COLORS[n.type],
+    );
   });
 
   data.edges.forEach((e) => {
@@ -110,6 +134,12 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState('');
+  const [detailStack, setDetailStack] = useState<DetailView[]>([]);
+  const detailView = detailStack.length > 0 ? detailStack[detailStack.length - 1] : null;
+
+  const pushDetail = (view: DetailView) => setDetailStack((s) => [...s, view]);
+  const popDetail = () => setDetailStack((s) => s.slice(0, -1));
+  const clearDetail = () => setDetailStack([]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -170,7 +200,46 @@ export default function App() {
     setConnected(false);
     setOverview(null);
     setGraph(null);
+    setDetailStack([]);
   };
+
+  const openSummary = (title: string, filter: 'all' | 'public' | 'managed' | 'unmanaged') => {
+    clearDetail();
+    pushDetail({ kind: 'summary', title, filter });
+  };
+
+  const openQuestion = (card: QuestionCard) => {
+    clearDetail();
+    pushDetail({ kind: 'question', card });
+  };
+
+  const openAlert = (alert: Alert, index: number) => {
+    clearDetail();
+    pushDetail({ kind: 'alert', alert, index });
+  };
+
+  const openResource = (resource: ResourceNode) => {
+    pushDetail({ kind: 'resource', resource });
+  };
+
+  const handleDetailBack = () => {
+    if (detailStack.length > 1) popDetail();
+    else clearDetail();
+  };
+
+  const handleNodeClick: NodeMouseHandler = (_, node) => {
+    const resource = graph?.nodes.find((n) => n.id === node.id);
+    if (resource) openResource(resource);
+  };
+
+  const isStatActive = (filter: string) =>
+    detailView?.kind === 'summary' && detailView.filter === filter;
+
+  const isQuestionActive = (q: string) =>
+    detailView?.kind === 'question' && detailView.card.question === q;
+
+  const isAlertActive = (index: number) =>
+    detailView?.kind === 'alert' && detailView.index === index;
 
   if (!connected) {
     return <ConnectPage onConnected={() => { setConnected(true); load(); }} />;
@@ -200,27 +269,85 @@ export default function App() {
       <div className="main">
         <aside className="sidebar">
           <div className="summary-grid">
-            <div className="stat"><div className="label">Resources</div><div className="value">{s?.total_resources}</div></div>
-            <div className="stat critical"><div className="label">Public</div><div className="value">{s?.public_resources}</div></div>
-            <div className="stat"><div className="label">Terraform</div><div className="value">{s?.managed_by_terraform}</div></div>
-            <div className="stat warn"><div className="label">Unmanaged</div><div className="value">{s?.unmanaged}</div></div>
+            <button
+              type="button"
+              className={`stat stat-clickable stat-resources ${isStatActive('all') ? 'active' : ''}`}
+              onClick={() => openSummary('All Resources', 'all')}
+            >
+              <div className="label">Resources</div>
+              <div className="value">{s?.total_resources}</div>
+              <span className="stat-hint">Tap to list all →</span>
+            </button>
+            <button
+              type="button"
+              className={`stat stat-clickable stat-public ${isStatActive('public') ? 'active' : ''}`}
+              onClick={() => openSummary('Public Resources', 'public')}
+            >
+              <div className="label">Public</div>
+              <div className="value">{s?.public_resources}</div>
+              <span className="stat-hint">Tap to list →</span>
+            </button>
+            <button
+              type="button"
+              className={`stat stat-clickable stat-terraform ${isStatActive('managed') ? 'active' : ''}`}
+              onClick={() => openSummary('Terraform Managed', 'managed')}
+            >
+              <div className="label">Terraform</div>
+              <div className="value">{s?.managed_by_terraform}</div>
+              <span className="stat-hint">Tap to list →</span>
+            </button>
+            <button
+              type="button"
+              className={`stat stat-clickable stat-unmanaged ${isStatActive('unmanaged') ? 'active' : ''}`}
+              onClick={() => openSummary('Unmanaged Resources', 'unmanaged')}
+            >
+              <div className="label">Unmanaged</div>
+              <div className="value">{s?.unmanaged}</div>
+              <span className="stat-hint">Tap to list →</span>
+            </button>
           </div>
 
-          <h2 className="sidebar-title">Questions</h2>
-          {overview?.questions.map((q) => (
-            <div key={q.question} className="card">
-              <h3>{q.question}</h3>
-              <p>{q.answer}</p>
-            </div>
-          ))}
+          {detailView && graph ? (
+            <DetailPanel
+              view={detailView}
+              graph={graph}
+              onClose={handleDetailBack}
+              onSelectResource={openResource}
+              embedded
+            />
+          ) : (
+            <>
+              <h2 className="sidebar-title">Questions</h2>
+              {overview?.questions.map((q) => (
+                <button
+                  key={q.id ?? q.question}
+                  type="button"
+                  className={`card card-clickable ${isQuestionActive(q.question) ? 'active' : ''}`}
+                  onClick={() => openQuestion(q)}
+                >
+                  <h3>{q.question}</h3>
+                  <p>{q.answer}</p>
+                  <span className="card-chevron">Open details ›</span>
+                </button>
+              ))}
 
-          <h2 className="sidebar-title">Alerts</h2>
-          {overview?.alerts.slice(0, 8).map((a, i) => (
-            <div key={i} className={`alert ${a.severity === 'medium' ? 'medium' : a.severity === 'info' ? 'info' : ''}`}>
-              <strong>{a.title}</strong>
-              <div className="alert-detail">{a.detail}</div>
-            </div>
-          ))}
+              <h2 className="sidebar-title">Alerts</h2>
+              {overview?.alerts.length === 0 && (
+                <p className="sidebar-empty">No alerts — looking good.</p>
+              )}
+              {overview?.alerts.slice(0, 8).map((a, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className={`alert alert-clickable ${a.severity === 'medium' ? 'medium' : a.severity === 'info' ? 'info' : ''} ${isAlertActive(i) ? 'active' : ''}`}
+                  onClick={() => openAlert(a, i)}
+                >
+                  <strong>{a.title}</strong>
+                  <div className="alert-detail">{a.detail}</div>
+                </button>
+              ))}
+            </>
+          )}
         </aside>
 
         <div className="map-area">
@@ -236,13 +363,14 @@ export default function App() {
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
+            onNodeClick={handleNodeClick}
             fitView
             minZoom={0.3}
             maxZoom={2}
           >
             <Background color="#334155" gap={20} />
             <Controls />
-            <MiniMap nodeColor={(n) => (n.className?.includes('risk') ? '#ef4444' : '#3b82f6')} />
+            <MiniMap nodeColor={(n) => (n.className?.includes('risk') ? '#f472b6' : '#6366f1')} />
           </ReactFlow>
         </div>
       </div>

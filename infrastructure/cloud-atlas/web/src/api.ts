@@ -21,6 +21,8 @@ export interface ResourceNode {
   name: string;
   region?: string;
   public?: boolean;
+  arn?: string;
+  tags?: Record<string, string>;
   metadata?: Record<string, unknown>;
 }
 
@@ -41,11 +43,16 @@ export interface Alert {
 }
 
 export interface QuestionCard {
+  id?: string;
   question: string;
   answer: string;
   count?: number;
   alerts?: Alert[];
   modules?: Record<string, number>;
+  resources?: ResourceNode[];
+  by_type?: Record<string, ResourceNode[]>;
+  managed_resources?: ResourceNode[];
+  ghosts?: { address: string; type: string }[];
 }
 
 export interface Overview {

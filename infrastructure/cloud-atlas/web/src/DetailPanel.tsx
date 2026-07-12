@@ -1,11 +1,12 @@
 import { Alert, GraphData, QuestionCard, ResourceNode } from './api';
-import { DetailView, formatType, getChildren, getParents, groupByType, TYPE_ICON } from './inventory';
+import { DetailView, formatType, getChildren, getParents, getResourceStatus, groupByType, statusTone, TYPE_ICON } from './inventory';
 
 interface Props {
   view: DetailView;
   graph: GraphData;
   onClose: () => void;
   onSelectResource: (r: ResourceNode) => void;
+  embedded?: boolean;
 }
 
 function ResourceRow({
@@ -18,6 +19,8 @@ function ResourceRow({
   compact?: boolean;
 }) {
   const tf = resource.metadata?.terraform_status as string | undefined;
+  const status = getResourceStatus(resource);
+  const statusKind = status ? statusTone(status) : null;
   return (
     <button type="button" className="resource-row" onClick={onClick}>
       <span className="resource-icon">{TYPE_ICON[resource.type] ?? '◆'}</span>
@@ -26,6 +29,9 @@ function ResourceRow({
         {!compact && <div className="resource-id">{resource.id}</div>}
         <div className="resource-badges">
           <span className="badge badge-type">{formatType(resource.type)}</span>
+          {status && statusKind && (
+            <span className={`badge badge-status badge-status-${statusKind}`}>{status}</span>
+          )}
           {resource.public && <span className="badge badge-public">public</span>}
           {tf && tf !== 'unknown' && (
             <span className={`badge badge-${tf}`}>{tf}</span>
@@ -82,6 +88,8 @@ function ResourceDetail({
   const parents = getParents(graph, resource.id);
   const children = getChildren(graph, resource.id);
   const meta = resource.metadata ?? {};
+  const status = getResourceStatus(resource);
+  const statusKind = status ? statusTone(status) : null;
 
   return (
     <div className="resource-detail">
@@ -97,6 +105,9 @@ function ResourceDetail({
         <div className="meta-item"><span>ID</span><code>{resource.id}</code></div>
         {resource.arn && <div className="meta-item"><span>ARN</span><code>{resource.arn}</code></div>}
         <div className="meta-item"><span>Public</span><strong className={resource.public ? 'text-danger' : 'text-ok'}>{resource.public ? 'Yes' : 'No'}</strong></div>
+        {status && statusKind && (
+          <div className="meta-item"><span>Status</span><strong className={statusKind === 'ok' ? 'text-ok' : statusKind === 'bad' ? 'text-danger' : ''}>{status}</strong></div>
+        )}
         {meta.terraform_status != null && (
           <div className="meta-item"><span>Terraform</span><strong>{String(meta.terraform_status)}</strong></div>
         )}
@@ -145,10 +156,12 @@ function ResourceDetail({
   );
 }
 
-export default function DetailPanel({ view, graph, onClose, onSelectResource }: Props) {
+export default function DetailPanel({ view, graph, onClose, onSelectResource, embedded }: Props) {
   let title = '';
   let subtitle = '';
   let body: React.ReactNode = null;
+  const panelClass = embedded ? 'detail-panel detail-panel-embedded' : 'detail-panel';
+  const backLabel = view.kind === 'resource' ? '← Back' : embedded ? '← Back to list' : '← Back to map';
 
   if (view.kind === 'summary') {
     title = view.title;
@@ -241,9 +254,9 @@ export default function DetailPanel({ view, graph, onClose, onSelectResource }: 
 
   if (view.kind === 'resource') {
     return (
-      <div className="detail-panel">
+      <div className={panelClass}>
         <div className="detail-header">
-          <button type="button" className="back-btn" onClick={onClose}>← Back</button>
+          <button type="button" className="back-btn" onClick={onClose}>{backLabel}</button>
         </div>
         <div className="detail-body">
           <ResourceDetail resource={view.resource} graph={graph} onSelectResource={onSelectResource} />
@@ -253,9 +266,9 @@ export default function DetailPanel({ view, graph, onClose, onSelectResource }: 
   }
 
   return (
-    <div className="detail-panel">
+    <div className={panelClass}>
       <div className="detail-header">
-        <button type="button" className="back-btn" onClick={onClose}>← Back to map</button>
+        <button type="button" className="back-btn" onClick={onClose}>{backLabel}</button>
         <div>
           <h2>{title}</h2>
           {subtitle && <p className="detail-subtitle">{subtitle}</p>}

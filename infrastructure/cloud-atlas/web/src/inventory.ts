@@ -42,6 +42,22 @@ export function formatType(type: string): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+export function getResourceStatus(resource: ResourceNode): string | null {
+  const meta = resource.metadata ?? {};
+  for (const key of ['status', 'state']) {
+    const value = meta[key];
+    if (value != null && String(value).trim()) return String(value);
+  }
+  return null;
+}
+
+export function statusTone(status: string): 'ok' | 'bad' | 'neutral' {
+  const s = status.toLowerCase();
+  if (['active', 'available', 'running', 'in-service', 'ok'].some((x) => s.includes(x))) return 'ok';
+  if (['stopped', 'failed', 'deleting', 'deleted', 'inactive', 'impaired'].some((x) => s.includes(x))) return 'bad';
+  return 'neutral';
+}
+
 export const TYPE_ICON: Record<string, string> = {
   vpc: '🌐',
   subnet: '📦',
