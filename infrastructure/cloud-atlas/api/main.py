@@ -14,6 +14,7 @@ from api.sessions import ScanSession, sessions
 from graph.awareness import AwarenessEngine
 from graph.engine import GraphEngine
 from scanner.aws_scanner import AwsScanner
+from scanner.costs import CostAttributor
 from scanner.credentials import AwsCredentials, build_session, verify_credentials
 from scanner.models import ScanSnapshot
 from scanner.terraform import TerraformCorrelator, TerraformStateLoader
@@ -49,10 +50,12 @@ def _run_scan(session: ScanSession) -> dict:
     snapshot = AwsScanner(credentials=creds, session=boto).scan()
     state = TerraformStateLoader(credentials=creds, session=boto).load()
     tf_report = TerraformCorrelator().correlate(snapshot, state)
-    awareness = AwarenessEngine().analyze(snapshot, tf_report)
+    cost_report = CostAttributor().attribute(snapshot, boto)
+    awareness = AwarenessEngine().analyze(snapshot, tf_report, cost_report)
     data = {
         "snapshot": json.loads(snapshot.model_dump_json()),
         "terraform": tf_report,
+        "costs": cost_report,
         "awareness": awareness,
     }
     session.cache = data
@@ -134,6 +137,7 @@ def overview(session: ScanSession = Depends(require_session)):
         "scanned_at": data["snapshot"]["scanned_at"],
         "account_id": data["snapshot"]["account_id"],
         "region": data["snapshot"]["region"],
+        "costs": data["costs"],
     }
 
 
