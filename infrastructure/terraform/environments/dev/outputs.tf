@@ -24,3 +24,7 @@ output "eks_nodes_security_group_id" {
 output "ecr_repository_urls" {
   value = module.ecr.repository_urls
 }
+
+output "db_endpoint" {
+  value = module.rds.db_endpoint
+}

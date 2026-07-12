@@ -26,3 +26,8 @@ variable "private_subnet_cidrs" {
 variable "availability_zones" {
   type = list(string)
 }
+
+variable "rds_multi_az" {
+  type    = bool
+  default = false
+}

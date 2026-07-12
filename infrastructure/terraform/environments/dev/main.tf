@@ -52,3 +52,21 @@ module "security_groups" {
   vpc_id       = module.vpc.vpc_id
   vpc_cidr     = module.vpc.vpc_cidr
 }
+
+module "ecr" {
+  source = "../../modules/ecr"
+
+  project_name = var.project_name
+  environment  = var.environment
+}
+
+module "rds" {
+  source = "../../modules/rds"
+
+  project_name       = var.project_name
+  environment        = var.environment
+  vpc_id             = module.vpc.vpc_id
+  private_subnet_ids = module.vpc.private_subnet_ids
+  security_group_id  = module.security_groups.rds_security_group_id
+  multi_az           = var.rds_multi_az
+}
