@@ -10,13 +10,13 @@ resource "aws_elasticache_subnet_group" "main" {
 }
 
 resource "aws_elasticache_cluster" "main" {
-  cluster_id           = "${local.name_prefix}-redis"
-  engine               = "redis"
-  engine_version       = "7.1"
-  node_type            = var.node_type
-  num_cache_nodes      = 1
-  port                 = 6379
-  subnet_group_name    = aws_elasticache_subnet_group.main.name
+  cluster_id         = "${local.name_prefix}-redis"
+  engine             = "redis"
+  engine_version     = "7.1"
+  node_type          = var.node_type
+  num_cache_nodes    = 1
+  port               = 6379
+  subnet_group_name  = aws_elasticache_subnet_group.main.name
   security_group_ids = [var.security_group_id]
 
   tags = merge(var.tags, { Name = "${local.name_prefix}-redis" })

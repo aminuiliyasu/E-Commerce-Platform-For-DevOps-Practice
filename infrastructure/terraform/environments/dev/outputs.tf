@@ -64,3 +64,11 @@ output "eks_oidc_provider_arn" {
 output "alb_controller_role_arn" {
   value = module.alb.alb_controller_role_arn
 }
+
+output "cloudfront_distribution_domain" {
+  value = module.cloudfront.distribution_domain_name
+}
+
+output "regional_certificate_arn" {
+  value = module.acm.regional_certificate_arn
+}

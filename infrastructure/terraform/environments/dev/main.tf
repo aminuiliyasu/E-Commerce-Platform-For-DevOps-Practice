@@ -176,3 +176,27 @@ module "waf" {
   environment  = var.environment
   enable       = var.enable_edge
 }
+
+module "cloudfront" {
+  source = "../../modules/cloudfront"
+
+  project_name       = var.project_name
+  environment        = var.environment
+  domain_name        = var.domain_name
+  admin_domain_name  = var.admin_domain_name
+  certificate_arn    = module.acm.cloudfront_certificate_arn
+  origin_domain_name = var.origin_domain_name
+  assets_bucket_name = module.s3.assets_bucket_name
+  web_acl_arn        = module.waf.web_acl_arn
+  enable             = var.enable_edge
+}
+
+module "route53" {
+  source = "../../modules/route53"
+
+  domain_name            = var.domain_name
+  admin_domain_name      = var.admin_domain_name
+  hosted_zone_id         = var.enable_edge ? data.aws_route53_zone.main[0].zone_id : ""
+  cloudfront_domain_name = module.cloudfront.distribution_domain_name
+  enable                 = var.enable_edge
+}
