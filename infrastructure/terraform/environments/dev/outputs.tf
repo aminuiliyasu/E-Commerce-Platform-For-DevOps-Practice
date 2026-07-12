@@ -36,3 +36,15 @@ output "redis_endpoint" {
 output "mq_endpoint" {
   value = module.amazon_mq.mq_endpoint
 }
+
+output "assets_bucket_name" {
+  value = module.s3.assets_bucket_name
+}
+
+output "eks_cluster_role_arn" {
+  value = module.iam.eks_cluster_role_arn
+}
+
+output "eks_nodes_role_arn" {
+  value = module.iam.eks_nodes_role_arn
+}
