@@ -10,18 +10,32 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 
+from scanner.credentials import AwsCredentials, build_session
 from scanner.models import ScanSnapshot
 
 
 class TerraformStateLoader:
-    def __init__(self, bucket: str | None = None, key: str | None = None, region: str | None = None, profile: str | None = None):
-        self.bucket = bucket or os.getenv("TF_STATE_BUCKET", "")
-        self.key = key or os.getenv("TF_STATE_KEY", "")
-        self.region = region or os.getenv("TF_STATE_REGION", os.getenv("AWS_REGION", "eu-central-1"))
-        session_kwargs: dict[str, Any] = {"region_name": self.region}
-        if profile or os.getenv("AWS_PROFILE"):
-            session_kwargs["profile_name"] = profile or os.getenv("AWS_PROFILE")
-        self.session = boto3.Session(**session_kwargs)
+    def __init__(
+        self,
+        bucket: str | None = None,
+        key: str | None = None,
+        region: str | None = None,
+        profile: str | None = None,
+        credentials: AwsCredentials | None = None,
+        session: boto3.Session | None = None,
+    ):
+        self.bucket = bucket or (credentials.tf_state_bucket if credentials else None) or os.getenv("TF_STATE_BUCKET", "")
+        self.key = key or (credentials.tf_state_key if credentials else None) or os.getenv("TF_STATE_KEY", "")
+        self.region = region or (credentials.tf_state_region if credentials else None) or os.getenv("TF_STATE_REGION", os.getenv("AWS_REGION", "eu-central-1"))
+        if session:
+            self.session = session
+        elif credentials:
+            self.session = build_session(credentials)
+        else:
+            session_kwargs: dict[str, Any] = {"region_name": self.region}
+            if profile or os.getenv("AWS_PROFILE"):
+                session_kwargs["profile_name"] = profile or os.getenv("AWS_PROFILE")
+            self.session = boto3.Session(**session_kwargs)
 
     def load(self) -> dict[str, Any] | None:
         if not self.bucket or not self.key:

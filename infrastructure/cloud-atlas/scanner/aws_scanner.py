@@ -8,6 +8,7 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 
+from scanner.credentials import AwsCredentials, build_session
 from scanner.models import EdgeType, NodeType, ResourceNode, ScanSnapshot
 
 
@@ -29,12 +30,23 @@ def _is_public_sg(permissions: list[dict]) -> bool:
 
 
 class AwsScanner:
-    def __init__(self, region: str | None = None, profile: str | None = None):
-        self.region = region or os.getenv("AWS_REGION", "eu-central-1")
-        session_kwargs: dict[str, Any] = {"region_name": self.region}
-        if profile or os.getenv("AWS_PROFILE"):
-            session_kwargs["profile_name"] = profile or os.getenv("AWS_PROFILE")
-        self.session = boto3.Session(**session_kwargs)
+    def __init__(
+        self,
+        region: str | None = None,
+        profile: str | None = None,
+        credentials: AwsCredentials | None = None,
+        session: boto3.Session | None = None,
+    ):
+        self.region = region or (credentials.region if credentials else None) or os.getenv("AWS_REGION", "eu-central-1")
+        if session:
+            self.session = session
+        elif credentials:
+            self.session = build_session(credentials)
+        else:
+            session_kwargs: dict[str, Any] = {"region_name": self.region}
+            if profile or os.getenv("AWS_PROFILE"):
+                session_kwargs["profile_name"] = profile or os.getenv("AWS_PROFILE")
+            self.session = boto3.Session(**session_kwargs)
 
     def scan(self) -> ScanSnapshot:
         sts = self.session.client("sts")
