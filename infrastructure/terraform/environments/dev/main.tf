@@ -120,3 +120,12 @@ module "eks" {
   min_size               = var.eks_min_size
   max_size               = var.eks_max_size
 }
+
+module "alb" {
+  source = "../../modules/alb"
+
+  project_name      = var.project_name
+  environment       = var.environment
+  oidc_provider_arn = module.eks.oidc_provider_arn
+  oidc_provider_url = module.eks.oidc_provider_url
+}
