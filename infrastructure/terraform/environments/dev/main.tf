@@ -88,3 +88,10 @@ module "amazon_mq" {
   private_subnet_ids = module.vpc.private_subnet_ids
   security_group_id  = module.security_groups.mq_security_group_id
 }
+
+module "s3" {
+  source = "../../modules/s3"
+
+  project_name = var.project_name
+  environment  = var.environment
+}
