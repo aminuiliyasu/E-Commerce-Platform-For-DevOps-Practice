@@ -1,3 +1,20 @@
+export interface AwsConnectPayload {
+  access_key_id: string;
+  secret_access_key: string;
+  session_token?: string;
+  region: string;
+  tf_state_bucket?: string;
+  tf_state_key?: string;
+}
+
+export interface ConnectResponse {
+  session_id: string;
+  account_id: string;
+  arn: string;
+  region: string;
+  summary: Overview['summary'];
+}
+
 export interface ResourceNode {
   id: string;
   type: string;
@@ -54,20 +71,72 @@ export interface GraphData {
 }
 
 const API = '/api';
+const SESSION_KEY = 'cloudAtlasSession';
+
+export function getSessionId(): string | null {
+  return sessionStorage.getItem(SESSION_KEY);
+}
+
+export function setSessionId(id: string): void {
+  sessionStorage.setItem(SESSION_KEY, id);
+}
+
+export function clearSession(): void {
+  sessionStorage.removeItem(SESSION_KEY);
+}
+
+function headers(): HeadersInit {
+  const sessionId = getSessionId();
+  return sessionId ? { 'X-Session-Id': sessionId } : {};
+}
+
+async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(`${API}${path}`, {
+    ...init,
+    headers: { ...headers(), ...init?.headers },
+  });
+  if (res.status === 401) {
+    clearSession();
+    throw new Error('SESSION_EXPIRED');
+  }
+  return res;
+}
+
+export async function connectAws(payload: AwsConnectPayload): Promise<ConnectResponse> {
+  const res = await fetch(`${API}/connect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.detail === 'string' ? err.detail : 'Failed to connect to AWS');
+  }
+  const data: ConnectResponse = await res.json();
+  setSessionId(data.session_id);
+  return data;
+}
+
+export async function disconnectAws(): Promise<void> {
+  if (getSessionId()) {
+    await fetch(`${API}/disconnect`, { method: 'POST', headers: headers() }).catch(() => {});
+  }
+  clearSession();
+}
 
 export async function fetchOverview(): Promise<Overview> {
-  const res = await fetch(`${API}/overview`);
+  const res = await apiFetch('/overview');
   if (!res.ok) throw new Error('Failed to load overview');
   return res.json();
 }
 
 export async function fetchGraph(): Promise<GraphData> {
-  const res = await fetch(`${API}/graph`);
+  const res = await apiFetch('/graph');
   if (!res.ok) throw new Error('Failed to load graph');
   return res.json();
 }
 
 export async function triggerScan(): Promise<void> {
-  const res = await fetch(`${API}/scan`, { method: 'POST' });
+  const res = await apiFetch('/scan', { method: 'POST' });
   if (!res.ok) throw new Error('Scan failed');
 }

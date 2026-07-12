@@ -9,7 +9,16 @@ import ReactFlow, {
   useEdgesState,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { fetchGraph, fetchOverview, triggerScan, GraphData, Overview } from './api';
+import {
+  fetchGraph,
+  fetchOverview,
+  triggerScan,
+  getSessionId,
+  disconnectAws,
+  GraphData,
+  Overview,
+} from './api';
+import ConnectPage from './ConnectPage';
 
 type Layer = 'network' | 'security' | 'terraform';
 
@@ -34,15 +43,11 @@ function buildFlow(data: GraphData, layer: Layer): { nodes: Node[]; edges: Edge[
 
   vpcs.forEach((vpc, vi) => {
     const vpcX = vi * 500;
-    const isRisk = layer === 'security' && data.nodes.some(
-      (n) => n.type === 'security_group' && n.public && n.metadata?.vpc_id === vpc.id
-    );
-
     nodes.push({
       id: vpc.id,
       position: { x: vpcX, y: 40 },
       data: { label: `VPC: ${vpc.name}` },
-      className: `node-vpc${isRisk ? ' node-risk' : ''}`,
+      className: 'node-vpc',
       style: { minWidth: 180, padding: 10 },
     });
 
@@ -58,7 +63,7 @@ function buildFlow(data: GraphData, layer: Layer): { nodes: Node[]; edges: Edge[
         className: isPublic ? 'node-subnet-public' : 'node-subnet-private',
         style: { minWidth: 150, padding: 8 },
       });
-      edges.push({ id: `${vpc.id}-${subnet.id}`, source: vpc.id, target: subnet.id, animated: false });
+      edges.push({ id: `${vpc.id}-${subnet.id}`, source: vpc.id, target: subnet.id });
     });
 
     const services = data.nodes.filter((n) =>
@@ -66,16 +71,11 @@ function buildFlow(data: GraphData, layer: Layer): { nodes: Node[]; edges: Edge[
       && data.edges.some((e) => e.source === vpc.id && e.target === n.id)
     );
     services.forEach((svc, si) => {
-      const show = layer !== 'security' || !svc.public || svc.type !== 'security_group';
-      if (!show && layer === 'security') return;
       const color = layer === 'security' && svc.public ? '#ef4444' : TYPE_COLORS[svc.type] || '#64748b';
       nodes.push({
         id: svc.id,
         position: { x: vpcX + 50 + si * 120, y: 380 },
-        data: {
-          label: `${svc.type}: ${svc.name}`,
-          tfStatus: svc.metadata?.terraform_status,
-        },
+        data: { label: `${svc.type}: ${svc.name}` },
         className: svc.public && layer === 'security' ? 'node-risk' : 'node-service',
         style: { minWidth: 120, padding: 8, borderColor: color },
       });
@@ -83,8 +83,7 @@ function buildFlow(data: GraphData, layer: Layer): { nodes: Node[]; edges: Edge[
     });
   });
 
-  const global = data.nodes.filter((n) => ['cloudfront', 'route53_zone', 's3', 'ecr'].includes(n.type));
-  global.forEach((g, gi) => {
+  data.nodes.filter((n) => ['cloudfront', 'route53_zone', 's3', 'ecr'].includes(n.type)).forEach((g, gi) => {
     nodes.push({
       id: g.id,
       position: { x: 50 + gi * 160, y: 520 },
@@ -104,10 +103,11 @@ function buildFlow(data: GraphData, layer: Layer): { nodes: Node[]; edges: Edge[
 }
 
 export default function App() {
+  const [connected, setConnected] = useState(false);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [graph, setGraph] = useState<GraphData | null>(null);
   const [layer, setLayer] = useState<Layer>('network');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState('');
 
@@ -115,20 +115,36 @@ export default function App() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
   const load = useCallback(async () => {
+    if (!getSessionId()) {
+      setConnected(false);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
       const [ov, gr] = await Promise.all([fetchOverview(), fetchGraph()]);
       setOverview(ov);
       setGraph(gr);
+      setConnected(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load');
+      if (e instanceof Error && e.message === 'SESSION_EXPIRED') {
+        setConnected(false);
+        setOverview(null);
+        setGraph(null);
+      } else {
+        setError(e instanceof Error ? e.message : 'Failed to load');
+      }
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (getSessionId()) {
+      setConnected(true);
+      load();
+    }
+  }, [load]);
 
   const flow = useMemo(() => (graph ? buildFlow(graph, layer) : { nodes: [], edges: [] }), [graph, layer]);
 
@@ -149,8 +165,18 @@ export default function App() {
     }
   };
 
-  if (loading) return <div className="loading">Loading Cloud Atlas...</div>;
-  if (error && !overview) return <div className="error">{error}</div>;
+  const handleDisconnect = async () => {
+    await disconnectAws();
+    setConnected(false);
+    setOverview(null);
+    setGraph(null);
+  };
+
+  if (!connected) {
+    return <ConnectPage onConnected={() => { setConnected(true); load(); }} />;
+  }
+
+  if (loading && !overview) return <div className="loading">Loading your AWS map...</div>;
 
   const s = overview?.summary;
 
@@ -161,10 +187,15 @@ export default function App() {
           <h1>Cloud Atlas</h1>
           <span>Account {overview?.account_id} · {overview?.region} · {overview?.scanned_at?.slice(0, 19)}</span>
         </div>
-        <button className="btn" onClick={handleScan} disabled={scanning}>
-          {scanning ? 'Scanning...' : 'Refresh Scan'}
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button className="btn" onClick={handleScan} disabled={scanning}>
+            {scanning ? 'Scanning...' : 'Refresh'}
+          </button>
+          <button className="btn btn-secondary" onClick={handleDisconnect}>Disconnect</button>
+        </div>
       </header>
+
+      {error && <div className="error-banner">{error}</div>}
 
       <div className="main">
         <aside className="sidebar">
@@ -175,7 +206,7 @@ export default function App() {
             <div className="stat warn"><div className="label">Unmanaged</div><div className="value">{s?.unmanaged}</div></div>
           </div>
 
-          <h2 style={{ fontSize: '0.9rem', marginBottom: '0.75rem', color: '#94a3b8' }}>Questions</h2>
+          <h2 className="sidebar-title">Questions</h2>
           {overview?.questions.map((q) => (
             <div key={q.question} className="card">
               <h3>{q.question}</h3>
@@ -183,11 +214,11 @@ export default function App() {
             </div>
           ))}
 
-          <h2 style={{ fontSize: '0.9rem', margin: '1rem 0 0.75rem', color: '#94a3b8' }}>Alerts</h2>
+          <h2 className="sidebar-title">Alerts</h2>
           {overview?.alerts.slice(0, 8).map((a, i) => (
             <div key={i} className={`alert ${a.severity === 'medium' ? 'medium' : a.severity === 'info' ? 'info' : ''}`}>
               <strong>{a.title}</strong>
-              <div style={{ color: '#94a3b8', marginTop: 4 }}>{a.detail}</div>
+              <div className="alert-detail">{a.detail}</div>
             </div>
           ))}
         </aside>
