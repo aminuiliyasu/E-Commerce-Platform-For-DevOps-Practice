@@ -10,6 +10,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 
   backend "s3" {
@@ -101,4 +105,18 @@ module "iam" {
 
   project_name = var.project_name
   environment  = var.environment
+}
+
+module "eks" {
+  source = "../../modules/eks"
+
+  project_name           = var.project_name
+  environment            = var.environment
+  private_subnet_ids     = module.vpc.private_subnet_ids
+  cluster_role_arn       = module.iam.eks_cluster_role_arn
+  node_role_arn          = module.iam.eks_nodes_role_arn
+  node_security_group_id = module.security_groups.eks_nodes_security_group_id
+  desired_size           = var.eks_desired_size
+  min_size               = var.eks_min_size
+  max_size               = var.eks_max_size
 }

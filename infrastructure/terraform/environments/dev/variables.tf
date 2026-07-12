@@ -31,3 +31,18 @@ variable "rds_multi_az" {
   type    = bool
   default = false
 }
+
+variable "eks_desired_size" {
+  type    = number
+  default = 1
+}
+
+variable "eks_min_size" {
+  type    = number
+  default = 1
+}
+
+variable "eks_max_size" {
+  type    = number
+  default = 3
+}
