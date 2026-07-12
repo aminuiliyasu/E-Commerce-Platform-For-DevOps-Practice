@@ -149,3 +149,30 @@ module "alb" {
   oidc_provider_arn = module.eks.oidc_provider_arn
   oidc_provider_url = module.eks.oidc_provider_url
 }
+
+module "acm" {
+  source = "../../modules/acm"
+
+  providers = {
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  project_name      = var.project_name
+  environment       = var.environment
+  domain_name       = var.domain_name
+  admin_domain_name = var.admin_domain_name
+  hosted_zone_id    = var.enable_edge ? data.aws_route53_zone.main[0].zone_id : ""
+  enable            = var.enable_edge
+}
+
+module "waf" {
+  source = "../../modules/waf"
+
+  providers = {
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  project_name = var.project_name
+  environment  = var.environment
+  enable       = var.enable_edge
+}
