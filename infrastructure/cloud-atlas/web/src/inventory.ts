@@ -58,6 +58,20 @@ export function statusTone(status: string): 'ok' | 'bad' | 'neutral' {
   return 'neutral';
 }
 
+export function formatCost(usd: number | null | undefined): string {
+  if (usd == null) return '—';
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(usd);
+}
+
+export function sumCosts(resources: { monthly_cost_usd?: number | null }[]): number {
+  return resources.reduce((total, r) => total + (r.monthly_cost_usd ?? 0), 0);
+}
+
 export const TYPE_ICON: Record<string, string> = {
   vpc: '🌐',
   subnet: '📦',

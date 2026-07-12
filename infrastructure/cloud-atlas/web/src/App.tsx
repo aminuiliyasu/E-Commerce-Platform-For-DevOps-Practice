@@ -24,7 +24,7 @@ import {
 } from './api';
 import ConnectPage from './ConnectPage';
 import DetailPanel from './DetailPanel';
-import { DetailView } from './inventory';
+import { DetailView, formatCost } from './inventory';
 
 type Layer = 'network' | 'security' | 'terraform';
 
@@ -248,13 +248,19 @@ export default function App() {
   if (loading && !overview) return <div className="loading">Loading your AWS map...</div>;
 
   const s = overview?.summary;
+  const costLabel = s?.cost_period_label ?? 'This month';
 
   return (
     <div className="app">
       <header className="header">
         <div>
           <h1>Cloud Atlas</h1>
-          <span>Account {overview?.account_id} · {overview?.region} · {overview?.scanned_at?.slice(0, 19)}</span>
+          <span>
+            Account {overview?.account_id} · {overview?.region} · {overview?.scanned_at?.slice(0, 19)}
+            {s?.cost_available && s.account_monthly_cost_usd != null && (
+              <> · Account {formatCost(s.account_monthly_cost_usd)} ({costLabel})</>
+            )}
+          </span>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button className="btn" onClick={handleScan} disabled={scanning}>
@@ -276,7 +282,8 @@ export default function App() {
             >
               <div className="label">Resources</div>
               <div className="value">{s?.total_resources}</div>
-              <span className="stat-hint">Tap to list all →</span>
+              <div className="stat-cost">{formatCost(s?.total_monthly_cost_usd)}</div>
+              <span className="stat-hint">{costLabel} · tap to list →</span>
             </button>
             <button
               type="button"
@@ -285,7 +292,8 @@ export default function App() {
             >
               <div className="label">Public</div>
               <div className="value">{s?.public_resources}</div>
-              <span className="stat-hint">Tap to list →</span>
+              <div className="stat-cost">{formatCost(s?.public_monthly_cost_usd)}</div>
+              <span className="stat-hint">{costLabel} · tap to list →</span>
             </button>
             <button
               type="button"
@@ -294,7 +302,8 @@ export default function App() {
             >
               <div className="label">Terraform</div>
               <div className="value">{s?.managed_by_terraform}</div>
-              <span className="stat-hint">Tap to list →</span>
+              <div className="stat-cost">{formatCost(s?.managed_monthly_cost_usd)}</div>
+              <span className="stat-hint">{costLabel} · tap to list →</span>
             </button>
             <button
               type="button"
@@ -303,7 +312,8 @@ export default function App() {
             >
               <div className="label">Unmanaged</div>
               <div className="value">{s?.unmanaged}</div>
-              <span className="stat-hint">Tap to list →</span>
+              <div className="stat-cost">{formatCost(s?.unmanaged_monthly_cost_usd)}</div>
+              <span className="stat-hint">{costLabel} · tap to list →</span>
             </button>
           </div>
 
@@ -314,6 +324,7 @@ export default function App() {
               onClose={handleDetailBack}
               onSelectResource={openResource}
               embedded
+              costPeriodLabel={costLabel}
             />
           ) : (
             <>
@@ -327,6 +338,9 @@ export default function App() {
                 >
                   <h3>{q.question}</h3>
                   <p>{q.answer}</p>
+                  {q.monthly_cost_usd != null && (
+                    <p className="card-cost">{formatCost(q.monthly_cost_usd)} · {costLabel}</p>
+                  )}
                   <span className="card-chevron">Open details ›</span>
                 </button>
               ))}
@@ -344,6 +358,9 @@ export default function App() {
                 >
                   <strong>{a.title}</strong>
                   <div className="alert-detail">{a.detail}</div>
+                  {a.monthly_cost_usd != null && a.monthly_cost_usd > 0 && (
+                    <div className="alert-cost">{formatCost(a.monthly_cost_usd)} · {costLabel}</div>
+                  )}
                 </button>
               ))}
             </>

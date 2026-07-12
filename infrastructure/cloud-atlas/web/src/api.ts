@@ -24,6 +24,7 @@ export interface ResourceNode {
   arn?: string;
   tags?: Record<string, string>;
   metadata?: Record<string, unknown>;
+  monthly_cost_usd?: number | null;
 }
 
 export interface ResourceEdge {
@@ -40,6 +41,7 @@ export interface Alert {
   detail: string;
   resource_id?: string;
   question?: string;
+  monthly_cost_usd?: number | null;
 }
 
 export interface QuestionCard {
@@ -53,6 +55,7 @@ export interface QuestionCard {
   by_type?: Record<string, ResourceNode[]>;
   managed_resources?: ResourceNode[];
   ghosts?: { address: string; type: string }[];
+  monthly_cost_usd?: number | null;
 }
 
 export interface Overview {
@@ -64,6 +67,13 @@ export interface Overview {
     ghost_in_state: number;
     alert_count: number;
     critical_count: number;
+    total_monthly_cost_usd?: number;
+    public_monthly_cost_usd?: number;
+    managed_monthly_cost_usd?: number;
+    unmanaged_monthly_cost_usd?: number;
+    account_monthly_cost_usd?: number | null;
+    cost_available?: boolean;
+    cost_period_label?: string;
   };
   questions: QuestionCard[];
   alerts: Alert[];

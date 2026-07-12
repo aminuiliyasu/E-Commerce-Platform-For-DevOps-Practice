@@ -1,5 +1,5 @@
 import { Alert, GraphData, QuestionCard, ResourceNode } from './api';
-import { DetailView, formatType, getChildren, getParents, getResourceStatus, groupByType, statusTone, TYPE_ICON } from './inventory';
+import { DetailView, formatCost, formatType, getChildren, getParents, getResourceStatus, groupByType, statusTone, sumCosts, TYPE_ICON } from './inventory';
 
 interface Props {
   view: DetailView;
@@ -7,6 +7,7 @@ interface Props {
   onClose: () => void;
   onSelectResource: (r: ResourceNode) => void;
   embedded?: boolean;
+  costPeriodLabel?: string;
 }
 
 function ResourceRow({
@@ -41,6 +42,9 @@ function ResourceRow({
           )}
         </div>
       </div>
+      {resource.monthly_cost_usd != null && (
+        <span className="resource-cost">{formatCost(resource.monthly_cost_usd)}</span>
+      )}
       <span className="resource-chevron">›</span>
     </button>
   );
@@ -48,30 +52,41 @@ function ResourceRow({
 
 function ResourceList({
   resources,
-  graph,
   onSelectResource,
+  costPeriodLabel,
 }: {
   resources: ResourceNode[];
-  graph: GraphData;
   onSelectResource: (r: ResourceNode) => void;
+  costPeriodLabel?: string;
 }) {
   const grouped = groupByType(resources);
   const types = Object.keys(grouped);
   if (types.length === 0) return <p className="detail-empty">No resources in this category.</p>;
 
+  const listTotal = sumCosts(resources);
+
   return (
     <div className="resource-groups">
-      {types.map((type) => (
-        <div key={type} className="resource-group">
-          <h4 className="group-title">
-            {TYPE_ICON[type] ?? '◆'} {formatType(type)}
-            <span className="group-count">{grouped[type].length}</span>
-          </h4>
-          {grouped[type].map((r) => (
-            <ResourceRow key={r.id} resource={r} onClick={() => onSelectResource(r)} />
-          ))}
-        </div>
-      ))}
+      <div className="detail-cost-banner">
+        <span>{costPeriodLabel ?? 'This month'}</span>
+        <strong>{formatCost(listTotal)}</strong>
+      </div>
+      {types.map((type) => {
+        const groupResources = grouped[type];
+        const groupCost = sumCosts(groupResources);
+        return (
+          <div key={type} className="resource-group">
+            <h4 className="group-title">
+              {TYPE_ICON[type] ?? '◆'} {formatType(type)}
+              <span className="group-count">{groupResources.length}</span>
+              <span className="group-cost">{formatCost(groupCost)}</span>
+            </h4>
+            {groupResources.map((r) => (
+              <ResourceRow key={r.id} resource={r} onClick={() => onSelectResource(r)} />
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -80,10 +95,12 @@ function ResourceDetail({
   resource,
   graph,
   onSelectResource,
+  costPeriodLabel,
 }: {
   resource: ResourceNode;
   graph: GraphData;
   onSelectResource: (r: ResourceNode) => void;
+  costPeriodLabel?: string;
 }) {
   const parents = getParents(graph, resource.id);
   const children = getChildren(graph, resource.id);
@@ -98,6 +115,9 @@ function ResourceDetail({
         <div>
           <h2>{resource.name}</h2>
           <p className="hero-sub">{formatType(resource.type)} · {resource.region ?? 'global'}</p>
+          {resource.monthly_cost_usd != null && (
+            <p className="hero-cost">{formatCost(resource.monthly_cost_usd)} · {costPeriodLabel ?? 'This month'}</p>
+          )}
         </div>
       </div>
 
@@ -105,6 +125,7 @@ function ResourceDetail({
         <div className="meta-item"><span>ID</span><code>{resource.id}</code></div>
         {resource.arn && <div className="meta-item"><span>ARN</span><code>{resource.arn}</code></div>}
         <div className="meta-item"><span>Public</span><strong className={resource.public ? 'text-danger' : 'text-ok'}>{resource.public ? 'Yes' : 'No'}</strong></div>
+        <div className="meta-item"><span>Cost ({costPeriodLabel ?? 'MTD'})</span><strong className="text-cost">{formatCost(resource.monthly_cost_usd ?? 0)}</strong></div>
         {status && statusKind && (
           <div className="meta-item"><span>Status</span><strong className={statusKind === 'ok' ? 'text-ok' : statusKind === 'bad' ? 'text-danger' : ''}>{status}</strong></div>
         )}
@@ -156,7 +177,7 @@ function ResourceDetail({
   );
 }
 
-export default function DetailPanel({ view, graph, onClose, onSelectResource, embedded }: Props) {
+export default function DetailPanel({ view, graph, onClose, onSelectResource, embedded, costPeriodLabel }: Props) {
   let title = '';
   let subtitle = '';
   let body: React.ReactNode = null;
@@ -172,14 +193,14 @@ export default function DetailPanel({ view, graph, onClose, onSelectResource, em
       if (view.filter === 'unmanaged') return n.metadata?.terraform_status === 'unmanaged';
       return true;
     });
-    subtitle = `${nodes.length} items`;
-    body = <ResourceList resources={nodes} graph={graph} onSelectResource={onSelectResource} />;
+    subtitle = `${nodes.length} items · ${formatCost(sumCosts(nodes))} ${costPeriodLabel ?? 'MTD'}`;
+    body = <ResourceList resources={nodes} onSelectResource={onSelectResource} costPeriodLabel={costPeriodLabel} />;
   }
 
   if (view.kind === 'question') {
     const card = view.card;
     title = card.question;
-    subtitle = card.answer;
+    subtitle = `${card.answer}${card.monthly_cost_usd != null ? ` · ${formatCost(card.monthly_cost_usd)} ${costPeriodLabel ?? 'MTD'}` : ''}`;
     const rawResources = card.resources ?? [];
     const resources: ResourceNode[] = rawResources.map((r) => {
       const fromGraph = graph.nodes.find((n) => n.id === r.id);
@@ -211,7 +232,7 @@ export default function DetailPanel({ view, graph, onClose, onSelectResource, em
           </div>
         )}
         {resources.length > 0 ? (
-          <ResourceList resources={resources} graph={graph} onSelectResource={onSelectResource} />
+          <ResourceList resources={resources} onSelectResource={onSelectResource} costPeriodLabel={costPeriodLabel} />
         ) : (
           <p className="detail-empty">No resources listed for this question.</p>
         )}
@@ -233,7 +254,7 @@ export default function DetailPanel({ view, graph, onClose, onSelectResource, em
   if (view.kind === 'alert') {
     const a = view.alert;
     title = a.title;
-    subtitle = a.category;
+    subtitle = a.category + (a.monthly_cost_usd != null && a.monthly_cost_usd > 0 ? ` · ${formatCost(a.monthly_cost_usd)}` : '');
     const resource = a.resource_id ? graph.nodes.find((n) => n.id === a.resource_id) : null;
     body = (
       <>
@@ -259,7 +280,7 @@ export default function DetailPanel({ view, graph, onClose, onSelectResource, em
           <button type="button" className="back-btn" onClick={onClose}>{backLabel}</button>
         </div>
         <div className="detail-body">
-          <ResourceDetail resource={view.resource} graph={graph} onSelectResource={onSelectResource} />
+          <ResourceDetail resource={view.resource} graph={graph} onSelectResource={onSelectResource} costPeriodLabel={costPeriodLabel} />
         </div>
       </div>
     );
