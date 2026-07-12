@@ -32,3 +32,7 @@ output "db_endpoint" {
 output "redis_endpoint" {
   value = module.elasticache.redis_endpoint
 }
+
+output "mq_endpoint" {
+  value = module.amazon_mq.mq_endpoint
+}

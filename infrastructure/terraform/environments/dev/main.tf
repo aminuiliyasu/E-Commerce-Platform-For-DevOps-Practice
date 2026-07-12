@@ -79,3 +79,12 @@ module "elasticache" {
   private_subnet_ids = module.vpc.private_subnet_ids
   security_group_id  = module.security_groups.redis_security_group_id
 }
+
+module "amazon_mq" {
+  source = "../../modules/amazon-mq"
+
+  project_name       = var.project_name
+  environment        = var.environment
+  private_subnet_ids = module.vpc.private_subnet_ids
+  security_group_id  = module.security_groups.mq_security_group_id
+}
