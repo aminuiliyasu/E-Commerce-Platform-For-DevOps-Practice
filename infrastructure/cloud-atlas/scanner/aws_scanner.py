@@ -139,7 +139,7 @@ class AwsScanner:
                 name=tags.get("Name", nat_id),
                 region=self.region,
                 tags=tags,
-                metadata={"subnet": nat.get("SubnetId")},
+                metadata={"subnet": nat.get("SubnetId"), "status": nat.get("State")},
             ))
             if nat.get("VpcId"):
                 snap.link(nat["VpcId"], nat_id, EdgeType.CONTAINS)
@@ -190,6 +190,7 @@ class AwsScanner:
                     "class": db.get("DBInstanceClass"),
                     "multi_az": db.get("MultiAZ"),
                     "public": db.get("PubliclyAccessible"),
+                    "status": db.get("DBInstanceStatus"),
                 },
                 public=db.get("PubliclyAccessible", False),
             ))
@@ -209,7 +210,7 @@ class AwsScanner:
                 type=NodeType.ELASTICACHE,
                 name=cid,
                 region=self.region,
-                metadata={"engine": cluster.get("Engine"), "node_type": cluster.get("CacheNodeType")},
+                metadata={"engine": cluster.get("Engine"), "node_type": cluster.get("CacheNodeType"), "status": cluster.get("CacheClusterStatus")},
             ))
 
     def _scan_mq(self, snap: ScanSnapshot) -> None:
@@ -254,7 +255,7 @@ class AwsScanner:
                     type=NodeType.EKS_NODEGROUP,
                     name=ng,
                     region=self.region,
-                    metadata={"desired": ng_detail.get("scalingConfig", {}).get("desiredSize")},
+                    metadata={"desired": ng_detail.get("scalingConfig", {}).get("desiredSize"), "status": ng_detail.get("status")},
                 ))
                 snap.link(name, ng, EdgeType.CONTAINS)
 
@@ -311,7 +312,7 @@ class AwsScanner:
                 name=lb.get("LoadBalancerName", lb_id),
                 region=self.region,
                 arn=lb_arn,
-                metadata={"scheme": lb.get("Scheme"), "dns": lb.get("DNSName")},
+                metadata={"scheme": lb.get("Scheme"), "dns": lb.get("DNSName"), "status": lb.get("State", {}).get("Code")},
                 public=lb.get("Scheme") == "internet-facing",
             ))
             for az in lb.get("AvailabilityZones", []):
